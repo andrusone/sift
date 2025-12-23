@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -78,6 +78,18 @@ class FlagsConfig:
     enable_low_bitrate_flag: bool
     low_bitrate_thresholds: Dict[str, int]
     low_bitrate_flag_name: str
+    # judgement_flags: list of flags that are *judgements* and should not be
+    # shown in rendered filenames. Configure in your TOML to control behavior.
+    judgement_flags: List[str] = field(
+        default_factory=lambda: [
+            "REPLACE_SOON",
+            "REPLACE",
+            "INCOMPATIBLE",
+            "REVIEW",
+            "OK",
+            "KEEP",
+        ]
+    )
 
 
 @dataclass(frozen=True)

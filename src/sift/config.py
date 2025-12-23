@@ -273,12 +273,27 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
             "flags.low_bitrate_thresholds must be a table of { string = int } (bps)"
         )
 
+    # default judgement flags (these are considered "judgement" and don't
+    # appear in filenames unless you override them in config)
+    default_judgement = [
+        "REPLACE_SOON",
+        "REPLACE",
+        "INCOMPATIBLE",
+        "REVIEW",
+        "OK",
+        "KEEP",
+    ]
+    jf = flags.get("judgement_flags", default_judgement)
+    if not isinstance(jf, list) or not all(isinstance(x, str) for x in jf):
+        raise ConfigError("flags.judgement_flags must be a list of strings")
+
     flags_cfg = FlagsConfig(
         enable_hfr_flag=_as_bool(flags, "enable_hfr_flag"),
         hfr_fps_threshold=_as_float(flags, "hfr_fps_threshold"),
         enable_low_bitrate_flag=_as_bool(flags, "enable_low_bitrate_flag"),
         low_bitrate_thresholds={k: int(v) for k, v in low_bt.items()},
         low_bitrate_flag_name=_as_str(flags, "low_bitrate_flag_name"),
+        judgement_flags=list(jf),
     )
 
     # ---- reporting

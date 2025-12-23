@@ -27,6 +27,8 @@ def write_cache(cfg: SiftConfig, *, items: List[Dict[str, Any]], errors: int) ->
         "items": items,
     }
     tmp = cp.with_suffix(cp.suffix + ".tmp")
+    # Ensure parent dir exists
+    tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

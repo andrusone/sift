@@ -1,8 +1,7 @@
-import tempfile
-import unittest
 from pathlib import Path
 
-from sift.cache import read_cache, write_cache
+from sift.inventory import build_inventory
+
 from sift.model import (
     PathsConfig,
     IOConfig,
@@ -10,30 +9,22 @@ from sift.model import (
     ClassificationConfig,
     NamingConfig,
     TierModelConfig,
+    TierDef,
     FlagsConfig,
     ReportingConfig,
     SiftConfig,
-    TierDef,
 )
 
 
-def dummy_cfg(cache_dir: Path) -> SiftConfig:
+def make_cfg(base: Path) -> SiftConfig:
     return SiftConfig(
         paths=PathsConfig(
-            incoming=cache_dir, outgoing_root=cache_dir, metadata_cache=cache_dir
+            incoming=base / "incoming",
+            outgoing_root=base / "outgoing",
+            metadata_cache=base / "cache",
         ),
         io=IOConfig(mode="copy", mkdirs=True, dedupe_on_collision=True),
-        ffprobe=FFProbeConfig(
-            bin="ffprobe",
-            args=[
-                "-v",
-                "error",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-            ],
-        ),
+        ffprobe=FFProbeConfig(bin="ffprobe", args=[]),
         classification=ClassificationConfig(
             media_type_strategy="folder",
             tv_sxe_regex="x",
@@ -59,9 +50,9 @@ def dummy_cfg(cache_dir: Path) -> SiftConfig:
             max_filename_len=200,
         ),
         tier_model=TierModelConfig(
-            tiers=3,
+            tiers=1,
             tier=[
-                TierDef(id="t1", folder="tier1", description="", requires={}, flags=[])
+                TierDef(id="T1", folder="tier1", description="", requires={}, flags=[])
             ],
         ),
         flags=FlagsConfig(
@@ -73,25 +64,22 @@ def dummy_cfg(cache_dir: Path) -> SiftConfig:
             judgement_flags=[],
         ),
         reporting=ReportingConfig(
-            write_jsonl_report=False, report_path=cache_dir / "report.jsonl"
+            write_jsonl_report=False, report_path=base / "report.jsonl"
         ),
     )
 
 
-class TestCache(unittest.TestCase):
-    def test_write_and_read(self):
-        with tempfile.TemporaryDirectory() as td:
-            cfg = dummy_cfg(Path(td))
-            items = [
-                {
-                    "relpath": "a.mkv",
-                    "path": "/x/a.mkv",
-                    "size": 1,
-                    "mtime_ns": 2,
-                    "ffprobe": {"ok": True},
-                }
-            ]
-            write_cache(cfg, items=items, errors=0)
-            data = read_cache(cfg)
-            self.assertEqual(data["count"], 1)
-            self.assertEqual(data["items"][0]["relpath"], "a.mkv")
+def test_build_inventory_includes_proposed_name(tmp_path):
+    cfg = make_cfg(tmp_path)
+    (cfg.paths.incoming).mkdir(parents=True)
+    src_file = cfg.paths.incoming / "movie.mkv"
+    src_file.write_bytes(b"0" * 1024)
+
+    inv = build_inventory(cfg, rescan=True)
+    assert isinstance(inv, dict)
+    items = inv.get("items", [])
+    assert len(items) == 1
+    assert "proposed_name" in items[0]
+    # Config provided a movie_template of "x" in this test helper, so the rendered
+    # proposed_name should equal that literal template value.
+    assert items[0]["proposed_name"] == "x"
