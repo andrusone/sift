@@ -58,8 +58,11 @@ hdr_side_data_regex = ["dovi", "dolby vision", "hdr10\\+", "mastering display", 
 # Tokens are interpreted by your script; keep them simple.
 # Suggested token set:
 #   {title} {year} {show} {season2} {episode2} {stem}
-#   {res} {hdr} {vcodec_tag} {acodec_tag} {audio_tag} {flags}
+#   {res} {hdr} {vcodec_tag} {acodec_tag} {audio_tag} {audio_codec} {audio_channels} {flags}
 #   {ext}
+#
+# NOTE: Add `{audio_codec}` and `{audio_channels}` if you want explicit
+# codec or channel-count tokens (e.g., `AAC` and `2`).
 #
 # IMPORTANT:
 # - If you are not doing online metadata lookup, {title}/{year}/{show}/{season}/{episode}
@@ -126,6 +129,16 @@ hfr_fps_threshold = 50.0
 enable_low_bitrate_flag = true
 low_bitrate_thresholds = { "2160p" = 12000000, "1080p" = 3000000, "720p" = 1500000 }
 low_bitrate_flag_name = "LOW_BR"
+
+# Flags that represent *judgements* about a file and should not appear in
+# rendered filenames. You can override these in your config.toml if you want
+# different behavior. Defaults include: REPLACE_SOON, REPLACE, INCOMPATIBLE,
+# REVIEW, OK, KEEP
+# judgement_flags = ["REPLACE_SOON", "REPLACE", "INCOMPATIBLE", "REVIEW", "OK", "KEEP"]
+# Judgement flags are flags that express editorial judgement (e.g., REPLACE_SOON).
+# These are configurable and will be excluded from filename rendering when set here.
+# Example:
+# judgement_flags = ["REPLACE_SOON", "REPLACE", "INCOMPATIBLE", "REVIEW"]
 
 [reporting]
 write_jsonl_report = true

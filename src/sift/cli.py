@@ -130,14 +130,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"[sift] invalid io.mode: {cfg.io.mode}", file=sys.stderr)
             return 4
 
-        if args.dry_run:
+        # --apply wins when both provided; compute the effective dry_run flag once
+        effective_dry_run = bool(args.dry_run) and not bool(args.apply)
+        if effective_dry_run:
             print("[sift] transfer: DRY RUN (no filesystem changes)")
 
         result = transfer_inventory(
             cfg,
             inv,
-            dry_run=bool(args.dry_run)
-            and not bool(args.apply),  # --apply wins if both provided
+            dry_run=effective_dry_run,
             only_ok_ffprobe=bool(args.only_ok_ffprobe),
         )
 

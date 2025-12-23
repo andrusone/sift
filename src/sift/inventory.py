@@ -47,6 +47,15 @@ def build_inventory(
         else:
             item["ffprobe"] = summarize(ffj)
 
+        # Compute the proposed name (rendered using naming templates) if possible.
+        try:
+            from .router import render_name
+
+            item["proposed_name"] = render_name(cfg, item)
+        except Exception:
+            # Don't fail the scan if rendering/routing fails; proposed_name will simply be absent.
+            pass
+
         items.append(item)
 
     items.sort(key=lambda x: x.get("relpath", ""))
