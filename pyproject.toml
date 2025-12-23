@@ -1,0 +1,43 @@
+[project]
+name = "sift"
+version = "0.1.0"
+description = "Media intake: ffprobe facts -> classify -> rename -> move/copy into an intake structure."
+readme = "README.md"
+requires-python = ">=3.12,<4"
+license = { text = "MIT" }
+
+authors = [
+  { name = "AndrusOne", email = "public@andrusone.dev" }
+]
+
+dependencies = []
+
+[project.scripts]
+sift = "sift.cli:main"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[dependency-groups]
+dev = [
+  "black>=25.12.0,<26.0.0",
+  "ruff>=0.14.10,<0.15.0",
+  "sqlfluff>=3.5.0,<4.0.0",
+  "pre-commit>=4.5.1,<5.0.0",
+]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.poetry]
+name = "sift"
+version = "0.1.0"
+description = "Media intake: ffprobe facts -> classify -> rename -> move/copy into an intake structure."
+authors = ["AndrusOne <public@andrusone.dev>"]
+readme = "README.md"
+license = "MIT"
+packages = [{ include = "sift", from = "src" }]
