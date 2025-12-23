@@ -88,21 +88,21 @@ tiers = 5
 id = "T1"
 folder = "T1-2160p-HDR-DDP5.1"
 description = "Reference / top shelf. 2160p + HDR + HEVC/AV1 + DDP 5.1+."
-requires = { res = ["2160p"], hdr = true, vcodec = ["hevc", "av1"], acodec = ["eac3"], min_audio_channels = 6 }
+requires = { res = ["2160p"], hdr = true, vcodec = ["hevc", "av1"], acodec = ["eac3"], min_audio_channels = { min = 6 } }
 flags = ["REF", "KEEP"]
 
 [[tier_model.tier]]
 id = "T2"
 folder = "T2-2160p-DD5.1"
 description = "Excellent. 2160p + HEVC + DD/DDP 5.1+. HDR optional."
-requires = { res = ["2160p"], vcodec = ["hevc"], acodec = ["ac3", "eac3"], min_audio_channels = 6 }
+requires = { res = ["2160p"], vcodec = ["hevc"], acodec = ["ac3", "eac3"], min_audio_channels = { min = 6 } }
 flags = ["KEEP"]
 
 [[tier_model.tier]]
 id = "T3"
 folder = "T3-1080p-Good"
 description = "Good / acceptable. 1080p + H264/HEVC + AAC/DD/DDP 2.0+."
-requires = { res = ["1080p"], vcodec = ["h264", "hevc"], acodec = ["aac", "ac3", "eac3"], min_audio_channels = 2 }
+requires = { res = ["1080p"], vcodec = ["h264", "hevc"], acodec = ["aac", "ac3", "eac3"], min_audio_channels = { min = 2 } }
 flags = ["OK"]
 
 [[tier_model.tier]]
@@ -111,6 +111,13 @@ folder = "T4-LowQuality"
 description = "Marginal. 720p/SD or generally suboptimal encodes."
 requires = { res = ["720p", "SD"] }
 flags = ["REPLACE_SOON"]
+
+[[tier_model.tier]]
+id = "T0"
+folder = "T0-Unclassified"
+description = "Catch-all when nothing matches (review)."
+requires = {}
+flags = ["REVIEW"]
 
 [[tier_model.tier]]
 id = "T5"

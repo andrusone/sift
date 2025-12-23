@@ -9,20 +9,31 @@ MVP1 responsibility:
 - Validate required settings and normalize paths
 - Create required folder structure (cache + tier folders under outgoing_root)
 
+MVP1.2 additions (this change):
+- Scan incoming files and run ffprobe for each file
+- Cache ffprobe-derived technical metrics (resolution, codecs, bitrate, fps, HDR-ish hints, etc.)
+- Use cache on subsequent runs
+- Add --rescan to force a fresh scan and overwrite the cache
+- Add --limit to cap how many files are probed (useful during iteration)
+- Add --only-ext to restrict scanning to certain extensions (optional)
+
 Design notes:
 - Uses Python 3.11+ built-in `tomllib` (no third-party deps).
-- Fails fast with clear error messages.
-- Treats config as an explicit contract; minimal “magic defaults”.
+- Uses ffprobe JSON output; treats failures per-file (does not kill the whole run).
+- Cache is deterministic-ish (sorted by relpath) and includes enough stats to detect changes later.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import tomllib  # Python 3.11+
@@ -60,13 +71,7 @@ class FFProbeConfig:
 
 @dataclass(frozen=True)
 class ClassificationConfig:
-    # media_type_strategy:
-    # - "folder": first directory under incoming is movies|tv
-    # - "guess": reserved for future heuristics
-    # - "sxe": if filename contains S##E## (or season/episode words) => tv, else movies
     media_type_strategy: str
-
-    # Only used when media_type_strategy == "sxe"
     tv_sxe_regex: str
     enable_season_episode_words: bool
     tv_season_episode_regex: str
@@ -154,12 +159,6 @@ def _as_bool(d: Dict[str, Any], key: str) -> bool:
 
 
 def _as_str(d: Dict[str, Any], key: str) -> str:
-    """
-    Accept any string except the empty string.
-
-    Note: whitespace-only strings are valid for formatting tokens like separators,
-    e.g. hdr_sep = " ".
-    """
     v = d.get(key)
     if isinstance(v, str) and v != "":
         return v
@@ -396,14 +395,6 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
 
 
 def ensure_dirs(cfg: SiftConfig) -> List[Path]:
-    """
-    Create directories implied by config. Returns a list of directories created (or ensured).
-    This is intentionally deterministic and boring:
-      - outgoing_root
-      - metadata_cache
-      - report_path parent
-      - tier folders for both movies and tv under outgoing_root
-    """
     ensured: List[Path] = []
 
     def _mk(p: Path) -> None:
@@ -413,11 +404,9 @@ def ensure_dirs(cfg: SiftConfig) -> List[Path]:
     _mk(cfg.paths.outgoing_root)
     _mk(cfg.paths.metadata_cache)
 
-    # Ensure report parent exists if reporting enabled
     if cfg.reporting.write_jsonl_report:
         _mk(cfg.reporting.report_path.parent)
 
-    # Pre-create all tier folders for both media types
     for media_type in ("movies", "tv"):
         base = cfg.paths.outgoing_root / media_type
         _mk(base)
@@ -428,6 +417,329 @@ def ensure_dirs(cfg: SiftConfig) -> List[Path]:
 
 
 # ----------------------------
+# Scanning + ffprobe + cache
+# ----------------------------
+
+
+CACHE_VERSION = 2
+DEFAULT_SCAN_CACHE_NAME = "scan.json"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _safe_int(v: Any) -> Optional[int]:
+    try:
+        if v is None:
+            return None
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(v: Any) -> Optional[float]:
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_ratio(r: Any) -> Optional[float]:
+    """
+    ffprobe often reports avg_frame_rate as '24000/1001'.
+    """
+    if not isinstance(r, str) or "/" not in r:
+        return _safe_float(r)
+    num_s, den_s = r.split("/", 1)
+    num = _safe_float(num_s)
+    den = _safe_float(den_s)
+    if not num or not den:
+        return None
+    if den == 0:
+        return None
+    return num / den
+
+
+def _ffprobe_json(
+    cfg: SiftConfig, media_path: Path
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Run ffprobe and return (json_dict, error_string).
+    Never raises on ffprobe failure; errors are captured per-file.
+    """
+    cmd = [cfg.ffprobe.bin, *cfg.ffprobe.args, str(media_path)]
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None, f"ffprobe not found: {cfg.ffprobe.bin}"
+    except OSError as e:
+        return None, f"ffprobe exec error: {e}"
+
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        if not stderr:
+            stderr = f"ffprobe exited {proc.returncode}"
+        return None, stderr
+
+    try:
+        return json.loads(proc.stdout), None
+    except json.JSONDecodeError as e:
+        return None, f"ffprobe output was not valid JSON: {e}"
+
+
+def _summarize_ffprobe(ff: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract a compact, stable subset of technical metrics.
+    Keep it boring and cache-friendly.
+
+    What you get (best-effort):
+    - container format
+    - duration_s
+    - overall bitrate_bps
+    - video: codec, profile, width, height, pix_fmt, fps, bit_rate, color* and hdr-ish hints
+    - audio: codec, profile, channels, sample_rate, bit_rate
+    """
+    out: Dict[str, Any] = {"ok": True}
+
+    fmt = ff.get("format") or {}
+    out["container"] = fmt.get("format_name")
+    out["duration_s"] = _safe_float(fmt.get("duration"))
+    out["overall_bitrate_bps"] = _safe_int(fmt.get("bit_rate"))
+    out["size_bytes_probe"] = _safe_int(fmt.get("size"))
+
+    streams = ff.get("streams") or []
+    if not isinstance(streams, list):
+        streams = []
+
+    vstreams = [
+        s for s in streams if isinstance(s, dict) and s.get("codec_type") == "video"
+    ]
+    astreams = [
+        s for s in streams if isinstance(s, dict) and s.get("codec_type") == "audio"
+    ]
+
+    # Pick "best" video stream: highest resolution, then first
+    vbest = None
+    if vstreams:
+
+        def vkey(s: Dict[str, Any]) -> Tuple[int, int]:
+            w = _safe_int(s.get("width")) or 0
+            h = _safe_int(s.get("height")) or 0
+            return (w * h, h)
+
+        vbest = sorted(vstreams, key=vkey, reverse=True)[0]
+
+    # Pick "best" audio stream: highest channels, then first
+    abest = None
+    if astreams:
+
+        def akey(s: Dict[str, Any]) -> Tuple[int, int]:
+            ch = _safe_int(s.get("channels")) or 0
+            br = _safe_int(s.get("bit_rate")) or 0
+            return (ch, br)
+
+        abest = sorted(astreams, key=akey, reverse=True)[0]
+
+    if vbest:
+        vf: Dict[str, Any] = {}
+        vf["codec"] = vbest.get("codec_name")
+        vf["profile"] = vbest.get("profile")
+        vf["width"] = _safe_int(vbest.get("width"))
+        vf["height"] = _safe_int(vbest.get("height"))
+        vf["pix_fmt"] = vbest.get("pix_fmt")
+        vf["bit_rate_bps"] = _safe_int(vbest.get("bit_rate"))
+        vf["fps"] = _parse_ratio(vbest.get("avg_frame_rate")) or _parse_ratio(
+            vbest.get("r_frame_rate")
+        )
+
+        # Color / HDR-ish fields (presence depends on container/codec)
+        vf["color_space"] = vbest.get("color_space")
+        vf["color_transfer"] = vbest.get("color_transfer")
+        vf["color_primaries"] = vbest.get("color_primaries")
+        vf["color_range"] = vbest.get("color_range")
+        vf["chroma_location"] = vbest.get("chroma_location")
+
+        # Tags are common place for HDR naming; side_data_list can also exist.
+        tags = vbest.get("tags") if isinstance(vbest.get("tags"), dict) else {}
+        vf["tags"] = {k: str(v) for k, v in tags.items()} if tags else {}
+
+        side_data = vbest.get("side_data_list")
+        if isinstance(side_data, list):
+            # Keep it small: just the type names.
+            types = []
+            for sd in side_data:
+                if isinstance(sd, dict) and sd.get("side_data_type"):
+                    types.append(str(sd.get("side_data_type")))
+            vf["side_data_types"] = sorted(set(types))
+
+        out["video"] = vf
+
+    if abest:
+        af: Dict[str, Any] = {}
+        af["codec"] = abest.get("codec_name")
+        af["profile"] = abest.get("profile")
+        af["channels"] = _safe_int(abest.get("channels"))
+        af["channel_layout"] = abest.get("channel_layout")
+        af["sample_rate_hz"] = _safe_int(abest.get("sample_rate"))
+        af["bit_rate_bps"] = _safe_int(abest.get("bit_rate"))
+        out["audio"] = af
+
+    out["stream_counts"] = {"video": len(vstreams), "audio": len(astreams)}
+    return out
+
+
+def scan_incoming_files(
+    root: Path,
+    *,
+    only_ext: Optional[List[str]] = None,
+    limit: Optional[int] = None,
+) -> List[Path]:
+    if not root.exists():
+        raise ConfigError(f"paths.incoming does not exist: {root}")
+    if not root.is_dir():
+        raise ConfigError(f"paths.incoming is not a directory: {root}")
+
+    exts_norm: Optional[set[str]] = None
+    if only_ext:
+        exts_norm = {e.lower().lstrip(".") for e in only_ext if e.strip()}
+
+    paths = [p for p in root.rglob("*") if p.is_file()]
+    paths.sort(key=lambda p: str(p.relative_to(root)))
+
+    if exts_norm is not None:
+        paths = [p for p in paths if p.suffix.lower().lstrip(".") in exts_norm]
+
+    if limit is not None and limit >= 0:
+        paths = paths[:limit]
+
+    return paths
+
+
+def cache_path(cfg: SiftConfig) -> Path:
+    return cfg.paths.metadata_cache / DEFAULT_SCAN_CACHE_NAME
+
+
+def write_scan_cache(cfg: SiftConfig, items: List[Dict[str, Any]]) -> Path:
+    cp = cache_path(cfg)
+    payload = {
+        "schema_version": CACHE_VERSION,
+        "generated_at_utc": _utc_now_iso(),
+        "incoming_root": str(cfg.paths.incoming),
+        "count": len(items),
+        "items": items,
+    }
+
+    tmp = cp.with_suffix(cp.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    tmp.replace(cp)
+    return cp
+
+
+def read_scan_cache(cfg: SiftConfig) -> Dict[str, Any]:
+    cp = cache_path(cfg)
+    try:
+        raw = cp.read_text(encoding="utf-8")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(str(cp)) from e
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"Cache file is not valid JSON: {cp}: {e}") from e
+
+    if not isinstance(data, dict):
+        raise ConfigError(f"Cache file must be a JSON object: {cp}")
+
+    if int(data.get("schema_version", -1)) != CACHE_VERSION:
+        raise ConfigError(
+            f"Cache schema mismatch in {cp}: found {data.get('schema_version')}, expected {CACHE_VERSION}"
+        )
+
+    inc = data.get("incoming_root")
+    if inc and str(inc) != str(cfg.paths.incoming):
+        raise ConfigError(
+            "Cache was generated for a different incoming_root.\n"
+            f"  cache incoming_root : {inc}\n"
+            f"  config incoming_root: {cfg.paths.incoming}\n"
+            "Use --rescan to rebuild the cache."
+        )
+
+    return data
+
+
+def build_inventory(
+    cfg: SiftConfig,
+    *,
+    rescan: bool,
+    only_ext: Optional[List[str]],
+    limit: Optional[int],
+) -> Dict[str, Any]:
+    """
+    Return full inventory payload (either from cache or fresh scan).
+    """
+    if not rescan:
+        try:
+            return read_scan_cache(cfg)
+        except FileNotFoundError:
+            pass  # fall through to scan
+
+    media_paths = scan_incoming_files(
+        cfg.paths.incoming, only_ext=only_ext, limit=limit
+    )
+
+    items: List[Dict[str, Any]] = []
+    errors = 0
+
+    for p in media_paths:
+        rel = str(p.relative_to(cfg.paths.incoming))
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+
+        base: Dict[str, Any] = {
+            "relpath": rel,
+            "path": str(p),
+            "size": int(st.st_size),
+            "mtime_ns": int(st.st_mtime_ns),
+        }
+
+        ffj, err = _ffprobe_json(cfg, p)
+        if err or ffj is None:
+            errors += 1
+            base["ffprobe"] = {"ok": False, "error": err}
+        else:
+            base["ffprobe"] = _summarize_ffprobe(ffj)
+
+        items.append(base)
+
+    # Stable ordering
+    items.sort(key=lambda x: x.get("relpath", ""))
+
+    cp = write_scan_cache(cfg, items)
+    return {
+        "schema_version": CACHE_VERSION,
+        "generated_at_utc": _utc_now_iso(),
+        "incoming_root": str(cfg.paths.incoming),
+        "count": len(items),
+        "errors": int(errors),
+        "items": items,
+        "_cache_path": str(cp),
+        "_fresh_scan": True,
+    }
+
+
+# ----------------------------
 # CLI
 # ----------------------------
 
@@ -435,7 +747,7 @@ def ensure_dirs(cfg: SiftConfig) -> List[Path]:
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="sift",
-        description="Media intake: read config, later will inspect media via ffprobe and organize outputs.",
+        description="Media intake: read config, ffprobe incoming media, cache technical metrics.",
     )
     p.add_argument(
         "--config",
@@ -451,6 +763,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--print-folders",
         action="store_true",
         help="Print folders that would be created and exit (does not create them).",
+    )
+    p.add_argument(
+        "--rescan",
+        action="store_true",
+        help="Force a fresh scan + ffprobe and overwrite the scan cache.",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap how many files are probed (debug/iteration). Default: no limit.",
+    )
+    p.add_argument(
+        "--only-ext",
+        action="append",
+        default=None,
+        help="Restrict scanning to extensions (repeatable). Example: --only-ext mkv --only-ext mp4",
     )
     return p
 
@@ -468,18 +797,6 @@ def print_config_summary(cfg: SiftConfig) -> None:
         f"ffprobe               : {cfg.ffprobe.bin} {' '.join(cfg.ffprobe.args)} <file>"
     )
     print(f"media_type_strategy   : {cfg.classification.media_type_strategy}")
-    if cfg.classification.media_type_strategy == "sxe":
-        print(f"tv_sxe_regex          : {cfg.classification.tv_sxe_regex}")
-        print(
-            f"season/episode words  : {cfg.classification.enable_season_episode_words}"
-        )
-        if cfg.classification.enable_season_episode_words:
-            print(
-                f"tv_words_regex        : {cfg.classification.tv_season_episode_regex}"
-            )
-    print(
-        f"audio_preference      : {', '.join(cfg.classification.audio_codec_preference)}"
-    )
     print(
         f"tiers                 : {cfg.tier_model.tiers} ({len(cfg.tier_model.tier)} rules)"
     )
@@ -503,7 +820,6 @@ def planned_folders(cfg: SiftConfig) -> List[Path]:
         for t in cfg.tier_model.tier:
             folders.append(base / t.folder)
 
-    # Dedup + stable ordering (Path is hashable)
     unique = sorted(set(folders), key=lambda p: str(p))
     return unique
 
@@ -528,11 +844,37 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(p)
         return 0
 
-    # MVP1 behavior: ensure dirs exist if configured, then exit.
     if cfg.io.mkdirs:
         ensure_dirs(cfg)
 
-    print("[sift] config loaded OK. (MVP1: config ingestion + folder scaffold)")
+    # Build inventory (cache unless --rescan or cache missing).
+    try:
+        inv = build_inventory(
+            cfg,
+            rescan=bool(args.rescan),
+            only_ext=list(args.only_ext) if args.only_ext else None,
+            limit=args.limit,
+        )
+    except (ConfigError, OSError) as e:
+        print(f"[sift] scan/cache error: {e}", file=sys.stderr)
+        return 3
+
+    cp = cache_path(cfg)
+    fresh = bool(inv.get("_fresh_scan", False))
+    count = int(inv.get("count", 0))
+    errors = int(inv.get("errors", 0)) if fresh else int(inv.get("errors", 0) or 0)
+
+    # If we loaded from cache, inv won't have errors unless previous writer included it.
+    if not fresh:
+        errors = int(inv.get("errors", 0) or 0)
+
+    print(
+        f"[sift] inventory: {count} files "
+        f"({'fresh scan' if fresh else 'from cache'}) "
+        f"errors={errors} -> {cp}"
+    )
+
+    print("[sift] config loaded OK. (MVP1.2: ffprobe scan + cache)")
     return 0
 
 
