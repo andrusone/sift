@@ -46,6 +46,42 @@ def _require_table(root: Dict[str, Any], table: str) -> Dict[str, Any]:
     return root[table]
 
 
+def _get(root: Dict[str, Any], path: str) -> Any:
+    cur: Any = root
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur.get(part)
+    return cur
+
+
+def expect(
+    root: Dict[str, Any],
+    path: str,
+    typ: type,
+    *,
+    default=object(),
+    required: bool = True,
+) -> Any:
+    """Traverse `path` (dot-separated) and ensure the value exists and is `typ`.
+
+    If `default` is provided and the value is missing, `default` is returned.
+    Raises `ConfigError` on missing required values or type mismatches.
+    """
+    v = _get(root, path)
+    if v is None:
+        if default is not object():
+            return default
+        if required:
+            raise ConfigError(f"Missing required config value: {path}")
+        return None
+    if not isinstance(v, typ):
+        raise ConfigError(
+            f"Expected {typ.__name__} for '{path}', got: {type(v).__name__}"
+        )
+    return v
+
+
 def _as_bool(d: Dict[str, Any], key: str) -> bool:
     v = d.get(key)
     if isinstance(v, bool):
@@ -108,34 +144,32 @@ def _optional_bool(d: Dict[str, Any], key: str, default: bool) -> bool:
 
 def parse_config(root: Dict[str, Any]) -> SiftConfig:
     # ---- paths
-    paths = _require_table(root, "paths")
     paths_cfg = PathsConfig(
-        incoming=as_path(_as_str(paths, "incoming")),
-        outgoing_root=as_path(_as_str(paths, "outgoing_root")),
-        metadata_cache=as_path(_as_str(paths, "metadata_cache")),
+        incoming=as_path(expect(root, "paths.incoming", str)),
+        outgoing_root=as_path(expect(root, "paths.outgoing_root", str)),
+        metadata_cache=as_path(expect(root, "paths.metadata_cache", str)),
     )
 
     # ---- io
-    io = _require_table(root, "io")
-    mode = _as_str(io, "mode").lower()
+    mode = expect(root, "io.mode", str).lower()
     if mode not in {"move", "copy"}:
         raise ConfigError("io.mode must be 'move' or 'copy'")
     io_cfg = IOConfig(
         mode=mode,
-        mkdirs=_as_bool(io, "mkdirs"),
-        dedupe_on_collision=_as_bool(io, "dedupe_on_collision"),
+        mkdirs=expect(root, "io.mkdirs", bool),
+        dedupe_on_collision=expect(root, "io.dedupe_on_collision", bool),
     )
 
     # ---- ffprobe
-    ffprobe = _require_table(root, "ffprobe")
     ffprobe_cfg = FFProbeConfig(
-        bin=_as_str(ffprobe, "bin"),
-        args=_as_list_str(ffprobe, "args"),
+        bin=expect(root, "ffprobe.bin", str),
+        args=_as_list_str(expect(root, "ffprobe", dict), "args"),
     )
 
     # ---- classification
-    cls = _require_table(root, "classification")
-    media_type_strategy = _as_str(cls, "media_type_strategy").lower()
+    media_type_strategy = expect(
+        root, "classification.media_type_strategy", str
+    ).lower()
     if media_type_strategy not in {"folder", "guess", "sxe"}:
         raise ConfigError(
             "classification.media_type_strategy must be 'folder', 'guess', or 'sxe'"
@@ -146,38 +180,56 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
 
     classification_cfg = ClassificationConfig(
         media_type_strategy=media_type_strategy,
-        tv_sxe_regex=_optional_str(cls, "tv_sxe_regex", default_sxe),
+        tv_sxe_regex=_optional_str(
+            expect(root, "classification", dict), "tv_sxe_regex", default_sxe
+        ),
         enable_season_episode_words=_optional_bool(
-            cls, "enable_season_episode_words", False
+            expect(root, "classification", dict), "enable_season_episode_words", False
         ),
         tv_season_episode_regex=_optional_str(
-            cls, "tv_season_episode_regex", default_words
+            expect(root, "classification", dict),
+            "tv_season_episode_regex",
+            default_words,
         ),
-        video_stream_strategy=_as_str(cls, "video_stream_strategy").lower(),
-        audio_stream_strategy=_as_str(cls, "audio_stream_strategy").lower(),
-        audio_codec_preference=_as_list_str(cls, "audio_codec_preference"),
-        problem_audio_codecs=_as_list_str(cls, "problem_audio_codecs"),
-        problem_audio_profile_regex=_as_list_str(cls, "problem_audio_profile_regex"),
-        hdr_color_transfer=_as_list_str(cls, "hdr_color_transfer"),
-        hdr_side_data_regex=_as_list_str(cls, "hdr_side_data_regex"),
+        video_stream_strategy=expect(
+            root, "classification.video_stream_strategy", str
+        ).lower(),
+        audio_stream_strategy=expect(
+            root, "classification.audio_stream_strategy", str
+        ).lower(),
+        audio_codec_preference=_as_list_str(
+            expect(root, "classification", dict), "audio_codec_preference"
+        ),
+        problem_audio_codecs=_as_list_str(
+            expect(root, "classification", dict), "problem_audio_codecs"
+        ),
+        problem_audio_profile_regex=_as_list_str(
+            expect(root, "classification", dict), "problem_audio_profile_regex"
+        ),
+        hdr_color_transfer=_as_list_str(
+            expect(root, "classification", dict), "hdr_color_transfer"
+        ),
+        hdr_side_data_regex=_as_list_str(
+            expect(root, "classification", dict), "hdr_side_data_regex"
+        ),
     )
 
     # ---- naming
-    naming = _require_table(root, "naming")
+    naming_tbl = expect(root, "naming", dict)
     naming_cfg = NamingConfig(
-        movie_template=_as_str(naming, "movie_template"),
-        tv_template=_as_str(naming, "tv_template"),
-        hdr_sep=_as_str(naming, "hdr_sep"),
-        flags_sep=_as_str(naming, "flags_sep"),
-        fallback_to_stem=bool(naming.get("fallback_to_stem", True)),
-        vcodec_map={k: str(v) for k, v in _as_dict(naming, "vcodec_map").items()},
-        acodec_map={k: str(v) for k, v in _as_dict(naming, "acodec_map").items()},
-        sanitize=_as_bool(naming, "sanitize"),
-        max_filename_len=_as_int(naming, "max_filename_len"),
+        movie_template=_as_str(naming_tbl, "movie_template"),
+        tv_template=_as_str(naming_tbl, "tv_template"),
+        hdr_sep=_as_str(naming_tbl, "hdr_sep"),
+        flags_sep=_as_str(naming_tbl, "flags_sep"),
+        fallback_to_stem=bool(naming_tbl.get("fallback_to_stem", True)),
+        vcodec_map={k: str(v) for k, v in _as_dict(naming_tbl, "vcodec_map").items()},
+        acodec_map={k: str(v) for k, v in _as_dict(naming_tbl, "acodec_map").items()},
+        sanitize=_as_bool(naming_tbl, "sanitize"),
+        max_filename_len=_as_int(naming_tbl, "max_filename_len"),
     )
 
     # ---- tier model
-    tier_model = _require_table(root, "tier_model")
+    tier_model = expect(root, "tier_model", dict)
     tiers = _as_int(tier_model, "tiers")
     if tiers not in {3, 5}:
         raise ConfigError("tier_model.tiers must be 3 or 5")

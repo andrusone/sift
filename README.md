@@ -98,9 +98,156 @@ That’s it.
 
 ## Installation
 
-Requirements:
-- Linux
-- `ffprobe` (FFmpeg)
-- Python 3.11+
+### Requirements
 
-Example (Ubuntu):
+- Linux
+- `ffprobe` (from FFmpeg)
+- Python **3.11+**
+
+---
+
+### Install FFmpeg / ffprobe
+
+On Ubuntu or Debian:
+
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+Verify:
+
+```bash
+ffprobe -version
+```
+
+---
+
+### Install `sift`
+
+`sift` is a standalone Python tool. You do **not** need Poetry to use it.
+
+#### Option 1: Install with `pipx` (recommended)
+
+`pipx` installs Python tools in isolated environments and exposes them as normal commands.
+
+```bash
+sudo apt install pipx
+pipx ensurepath
+```
+
+Then install `sift` from the repository:
+
+```bash
+pipx install git+https://github.com/andrusone/sift.git
+```
+
+Verify:
+
+```bash
+sift --help
+```
+
+---
+
+#### Option 2: Install with `pip` (system or virtualenv)
+
+```bash
+python3 -m pip install git+https://github.com/andrusone/sift.git
+```
+
+This installs the `sift` command into your active Python environment.
+
+---
+
+#### Option 3: Run without installing (advanced / dev)
+
+From a cloned repository:
+
+```bash
+python -m sift.cli --config config.toml
+```
+
+---
+
+## Configuration
+
+`sift` is driven entirely by a TOML file.
+
+1. Copy the example config:
+
+```bash
+cp config.example.toml config.toml
+```
+
+2. Edit the paths to match your system:
+
+```toml
+[paths]
+incoming = "/nas/plex/incoming"
+outgoing_root = "/nas/plex/intake"
+metadata_cache = "/nas/plex/.cache/ffprobe"
+```
+
+Everything else has safe defaults and is meant to be read and understood.
+
+---
+
+## Usage
+
+### Basic run
+
+```bash
+sift --config config.toml
+```
+
+By default, files are **copied** (not moved) into the intake structure defined by your tiers.
+
+---
+
+### Dry run (recommended first)
+
+See what would happen without touching the filesystem:
+
+```bash
+sift --config config.toml --dry-run
+```
+
+---
+
+### Force a rescan of media files
+
+`sift` caches `ffprobe` results for speed. To ignore the cache and re-scan all files:
+
+```bash
+sift --config config.toml --rescan
+```
+
+---
+
+### Generate a transfer report
+
+Write a JSON report describing every decision made:
+
+```bash
+sift --config config.toml --dry-run --write-transfer-report /tmp/sift-transfer.json
+```
+
+Inspect results:
+
+```bash
+jq '.details[] | [.tier_id, .relpath] | @tsv' /tmp/sift-transfer.json
+```
+
+---
+
+## Typical workflow
+
+1. Drop new files into the **incoming** folder
+2. Run `sift --dry-run`
+3. Review the output folders and filenames
+4. Re-run without `--dry-run` when satisfied
+5. Manually promote, replace, or delete files
+
+`sift` never deletes your media.
+It only helps you decide what’s worth keeping.
