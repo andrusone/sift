@@ -178,16 +178,36 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
     default_sxe = r"(?i)\bs\s*\d{1,2}\s*[._ -]?\s*e\s*\d{1,3}\b"
     default_words = r"(?i)\bseason\s*\d{1,2}\b.*\bepisode\s*\d{1,3}\b"
 
+    classification_tbl = expect(root, "classification", dict)
+
+    # Parse resolution settings with defaults
+    resolution_tbl = classification_tbl.get("resolution", {})
+    if not isinstance(resolution_tbl, dict):
+        resolution_tbl = {}
+
+    horizontal_4k_threshold = resolution_tbl.get("horizontal_4k_threshold", 3800)
+    if not isinstance(horizontal_4k_threshold, int):
+        raise ConfigError(
+            "classification.resolution.horizontal_4k_threshold must be an integer"
+        )
+
+    vertical_thresholds_raw = resolution_tbl.get(
+        "vertical_thresholds", {"2160p": 2000, "1080p": 1000, "720p": 700}
+    )
+    if not isinstance(vertical_thresholds_raw, dict):
+        raise ConfigError(
+            "classification.resolution.vertical_thresholds must be a table/dict"
+        )
+    vertical_thresholds = {k: int(v) for k, v in vertical_thresholds_raw.items()}
+
     classification_cfg = ClassificationConfig(
         media_type_strategy=media_type_strategy,
-        tv_sxe_regex=_optional_str(
-            expect(root, "classification", dict), "tv_sxe_regex", default_sxe
-        ),
+        tv_sxe_regex=_optional_str(classification_tbl, "tv_sxe_regex", default_sxe),
         enable_season_episode_words=_optional_bool(
-            expect(root, "classification", dict), "enable_season_episode_words", False
+            classification_tbl, "enable_season_episode_words", False
         ),
         tv_season_episode_regex=_optional_str(
-            expect(root, "classification", dict),
+            classification_tbl,
             "tv_season_episode_regex",
             default_words,
         ),
@@ -198,20 +218,16 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
             root, "classification.audio_stream_strategy", str
         ).lower(),
         audio_codec_preference=_as_list_str(
-            expect(root, "classification", dict), "audio_codec_preference"
+            classification_tbl, "audio_codec_preference"
         ),
-        problem_audio_codecs=_as_list_str(
-            expect(root, "classification", dict), "problem_audio_codecs"
-        ),
+        problem_audio_codecs=_as_list_str(classification_tbl, "problem_audio_codecs"),
         problem_audio_profile_regex=_as_list_str(
-            expect(root, "classification", dict), "problem_audio_profile_regex"
+            classification_tbl, "problem_audio_profile_regex"
         ),
-        hdr_color_transfer=_as_list_str(
-            expect(root, "classification", dict), "hdr_color_transfer"
-        ),
-        hdr_side_data_regex=_as_list_str(
-            expect(root, "classification", dict), "hdr_side_data_regex"
-        ),
+        hdr_color_transfer=_as_list_str(classification_tbl, "hdr_color_transfer"),
+        hdr_side_data_regex=_as_list_str(classification_tbl, "hdr_side_data_regex"),
+        horizontal_4k_threshold=horizontal_4k_threshold,
+        vertical_thresholds=vertical_thresholds,
     )
 
     # ---- naming

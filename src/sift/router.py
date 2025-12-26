@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from .model import SiftConfig, TierDef
+from .model import ClassificationConfig, SiftConfig, TierDef
 
 
 # ----------------------------
@@ -76,17 +76,29 @@ def infer_media_type(cfg: SiftConfig, item: Dict[str, Any]) -> str:
 # ----------------------------
 
 
-def _res_label_from_height(h: Optional[int]) -> str:
+def _res_label_from_dimensions(
+    cfg: ClassificationConfig, width: Optional[int], height: Optional[int]
+) -> str:
     """
-    Map height -> your res buckets: 2160p / 1080p / 720p / SD
+    Map dimensions -> res buckets: 2160p / 1080p / 720p / SD
+    For ultra-wide theatrical formats, check horizontal threshold first.
     """
-    if h is None:
-        return "SD"
-    if h >= 2000:
+    # Check horizontal resolution for 4K theatrical formats (e.g., 4096x1716)
+    # Debug: uncomment to troubleshoot resolution classification
+    # import sys
+    # print(f"DEBUG: width={width}, height={height}, threshold={cfg.horizontal_4k_threshold}", file=sys.stderr)
+
+    if width and width >= cfg.horizontal_4k_threshold:
         return "2160p"
-    if h >= 1000:
+
+    # Otherwise use vertical resolution
+    if height is None:
+        return "SD"
+    if height >= cfg.vertical_thresholds.get("2160p", 2000):
+        return "2160p"
+    if height >= cfg.vertical_thresholds.get("1080p", 1000):
         return "1080p"
-    if h >= 700:
+    if height >= cfg.vertical_thresholds.get("720p", 700):
         return "720p"
     return "SD"
 
@@ -185,9 +197,10 @@ def derive_facts(cfg: SiftConfig, item: Dict[str, Any]) -> Dict[str, Any]:
             "problem_audio": False,
         }
 
+    width = _as_int(_get(ff, "video.width"))
     height = _as_int(_get(ff, "video.height"))
     facts = {
-        "res": _res_label_from_height(height),
+        "res": _res_label_from_dimensions(cfg.classification, width, height),
         "hdr": _is_hdr(cfg, item),
         "vcodec": _as_str(_get(ff, "video.codec")),
         "acodec": _as_str(_get(ff, "audio.codec")),

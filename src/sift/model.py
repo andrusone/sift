@@ -42,6 +42,11 @@ class ClassificationConfig:
     hdr_color_transfer: List[str]
     hdr_side_data_regex: List[str]
 
+    horizontal_4k_threshold: int = 3800
+    vertical_thresholds: Dict[str, int] = field(
+        default_factory=lambda: {"2160p": 2000, "1080p": 1000, "720p": 700}
+    )
+
 
 @dataclass(frozen=True)
 class NamingConfig:

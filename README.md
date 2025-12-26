@@ -217,11 +217,15 @@ sift --config config.toml --dry-run
 
 ### Force a rescan of media files
 
-`sift` caches `ffprobe` results for speed. To ignore the cache and re-scan all files:
+`sift` caches `ffprobe` results and classification decisions for speed.
+
+**Important:** When you modify classification logic (tier rules, resolution thresholds, codec mappings, etc.) in `config.toml`, you **must** use `--rescan` to regenerate the cache with the new rules:
 
 ```bash
 sift --config config.toml --rescan
 ```
+
+Without `--rescan`, sift will use the cached classifications from the previous configuration.
 
 ---
 
