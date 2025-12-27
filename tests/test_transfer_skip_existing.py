@@ -104,3 +104,39 @@ def test_transfer_skips_if_proposed_name_exists(tmp_path, capsys):
 
     # cleanup
     shutil.rmtree(cfg.paths.outgoing_root)
+
+
+def test_transfer_skips_if_dedup_variant_exists(tmp_path, capsys):
+    cfg = make_cfg(tmp_path)
+    # Create incoming file
+    src_dir = cfg.paths.incoming
+    src_dir.mkdir(parents=True)
+    src_file = src_dir / "movie.mkv"
+    src_file.write_bytes(b"0" * 1024)
+
+    # Simulate a prior deduped copy in the destination parent
+    tier_root = cfg.paths.outgoing_root / "movies" / cfg.tier_model.tier[0].folder
+    tier_root.mkdir(parents=True)
+    existing = tier_root / "movie (1).mkv"
+    existing.write_bytes(b"processed")
+
+    inventory = {
+        "items": [
+            {
+                "relpath": "movie.mkv",
+                "path": str(src_file),
+                "size": src_file.stat().st_size,
+                "mtime_ns": src_file.stat().st_mtime_ns,
+                "ffprobe": {"ok": True},
+            }
+        ]
+    }
+
+    result = transfer_inventory(cfg, inventory, dry_run=False, only_ok_ffprobe=False)
+    assert result.copied == 0
+    assert result.skipped == 1
+    assert result.details[0]["reason"] == "already_processed"
+    assert result.details[0]["existing_path"] == str(existing)
+
+    # cleanup
+    shutil.rmtree(cfg.paths.outgoing_root)

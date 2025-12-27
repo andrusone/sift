@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass
@@ -92,6 +93,30 @@ def _same_file(src: Path, dst: Path) -> bool:
         return False
 
 
+def _find_existing_variant(dst: Path) -> Path | None:
+    """Return an existing file that matches dst or a deduped variant.
+
+    Looks in the destination's parent directory for either the exact
+    destination name or names produced by _dedup_path ("name (n).ext").
+    """
+
+    parent = dst.parent
+    if not parent.exists():
+        return None
+
+    stem = dst.stem
+    suffix = dst.suffix
+    dedup_pat = re.compile(rf"^{re.escape(stem)} \((\d+)\){re.escape(suffix)}$")
+
+    for p in parent.iterdir():
+        if not p.is_file():
+            continue
+        name = p.name
+        if name == dst.name or dedup_pat.match(name):
+            return p
+    return None
+
+
 def compute_destination(
     cfg: SiftConfig, item: Dict[str, Any]
 ) -> Tuple[str, str, Path, Dict[str, Any]]:
@@ -167,42 +192,27 @@ def transfer_inventory(
         # proposed_name is the basename we will write to in the destination
         proposed_name = dst.name
 
-        # Check early whether a file with this proposed name already exists under the
-        # tier folder; if so, skip — no need to re-copy already processed files.
-        try:
-            root_media_base = cfg.paths.outgoing_root / media_type
-            rel_from_media = dst.relative_to(root_media_base)
-            tier_folder = rel_from_media.parts[0] if rel_from_media.parts else None
-            if tier_folder:
-                tier_root = (root_media_base / tier_folder).resolve()
-            else:
-                tier_root = None
-        except Exception:
-            tier_root = None
-
-        if tier_root and tier_root.exists():
-            existing = None
-            for p in tier_root.rglob(proposed_name):
-                if p.is_file():
-                    existing = p
-                    break
-            if existing:
-                skipped += 1
-                details.append(
-                    {
-                        "relpath": rel,
-                        "src": str(src),
-                        "dst": str(dst),
-                        "proposed_name": proposed_name,
-                        "action": "skip",
-                        "reason": "already_processed",
-                        "existing_path": str(existing),
-                        "media_type": media_type,
-                        "tier_id": tier_id,
-                        "facts": facts,
-                    }
-                )
-                continue
+        # Check early for the computed destination or any deduped variant
+        # already present in the destination parent directory. If found, skip
+        # to avoid writing additional copies of the same logical file.
+        existing_variant = _find_existing_variant(dst)
+        if existing_variant:
+            skipped += 1
+            details.append(
+                {
+                    "relpath": rel,
+                    "src": str(src),
+                    "dst": str(dst),
+                    "proposed_name": proposed_name,
+                    "action": "skip",
+                    "reason": "already_processed",
+                    "existing_path": str(existing_variant),
+                    "media_type": media_type,
+                    "tier_id": tier_id,
+                    "facts": facts,
+                }
+            )
+            continue
 
         try:
             if not src.exists():
@@ -241,25 +251,23 @@ def transfer_inventory(
                     )
                     continue
 
-                if cfg.io.dedupe_on_collision:
-                    dst = _dedup_path(dst)
-                    proposed_name = dst.name
-                else:
-                    skipped += 1
-                    details.append(
-                        {
-                            "relpath": rel,
-                            "src": str(src),
-                            "dst": str(dst),
-                            "proposed_name": proposed_name,
-                            "action": "skip",
-                            "reason": "collision",
-                            "media_type": media_type,
-                            "tier_id": tier_id,
-                            "facts": facts,
-                        }
-                    )
-                    continue
+                # Existing destination means this logical file was already
+                # processed; skip instead of writing another deduped copy.
+                skipped += 1
+                details.append(
+                    {
+                        "relpath": rel,
+                        "src": str(src),
+                        "dst": str(dst),
+                        "proposed_name": proposed_name,
+                        "action": "skip",
+                        "reason": "already_processed",
+                        "media_type": media_type,
+                        "tier_id": tier_id,
+                        "facts": facts,
+                    }
+                )
+                continue
 
             _ensure_parent(dst, mkdirs=cfg.io.mkdirs)
 
