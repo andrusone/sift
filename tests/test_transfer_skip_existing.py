@@ -13,6 +13,7 @@ from sift.model import (
     TierDef,
     FlagsConfig,
     ReportingConfig,
+    SampleDetectionConfig,
     SiftConfig,
 )
 
@@ -66,6 +67,12 @@ def make_cfg(base: Path) -> SiftConfig:
         ),
         reporting=ReportingConfig(
             write_jsonl_report=False, report_path=base / "report.jsonl"
+        ),
+        sample_detection=SampleDetectionConfig(
+            enabled=False,
+            min_duration_s=300.0,
+            prefer_longest_variant=True,
+            min_video_streams=1,
         ),
     )
 

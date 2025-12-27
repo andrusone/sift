@@ -145,3 +145,18 @@ write_jsonl_report = true
 
 # Keep reports under outgoing_root for consistency with your /nas/plex layout.
 report_path = "/nas/plex/intake-report.jsonl"
+
+[sample_detection]
+# Skip short/sample files automatically using ffprobe metadata.
+enabled = true
+
+# Minimum duration in seconds. Files shorter than this are marked as samples.
+# Default: 300 seconds (5 minutes)
+min_duration_s = 300.0
+
+# When multiple files have similar normalized names (ignoring "sample", "trailer", etc.),
+# keep only the longest duration and mark others as samples.
+prefer_longest_variant = true
+
+# Minimum number of video streams required. Files without video are skipped.
+min_video_streams = 1

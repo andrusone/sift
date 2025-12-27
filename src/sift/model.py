@@ -104,6 +104,14 @@ class ReportingConfig:
 
 
 @dataclass(frozen=True)
+class SampleDetectionConfig:
+    enabled: bool
+    min_duration_s: float
+    prefer_longest_variant: bool
+    min_video_streams: int
+
+
+@dataclass(frozen=True)
 class SiftConfig:
     paths: PathsConfig
     io: IOConfig
@@ -113,3 +121,4 @@ class SiftConfig:
     tier_model: TierModelConfig
     flags: FlagsConfig
     reporting: ReportingConfig
+    sample_detection: SampleDetectionConfig

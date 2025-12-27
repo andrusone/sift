@@ -12,6 +12,7 @@ from .model import (
     NamingConfig,
     PathsConfig,
     ReportingConfig,
+    SampleDetectionConfig,
     SiftConfig,
     TierDef,
     TierModelConfig,
@@ -319,6 +320,15 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
         report_path=as_path(_as_str(reporting, "report_path")),
     )
 
+    # ---- sample_detection
+    sample_detection = _require_table(root, "sample_detection")
+    sample_detection_cfg = SampleDetectionConfig(
+        enabled=_optional_bool(sample_detection, "enabled", True),
+        min_duration_s=_as_float(sample_detection, "min_duration_s"),
+        prefer_longest_variant=_as_bool(sample_detection, "prefer_longest_variant"),
+        min_video_streams=_as_int(sample_detection, "min_video_streams"),
+    )
+
     return SiftConfig(
         paths=paths_cfg,
         io=io_cfg,
@@ -328,4 +338,5 @@ def parse_config(root: Dict[str, Any]) -> SiftConfig:
         tier_model=tier_cfg,
         flags=flags_cfg,
         reporting=reporting_cfg,
+        sample_detection=sample_detection_cfg,
     )

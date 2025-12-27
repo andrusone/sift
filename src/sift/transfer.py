@@ -161,6 +161,20 @@ def transfer_inventory(
 
         src = Path(src_s)
 
+        # Skip items marked as samples (too short, no video, or shorter variants)
+        skip_reason = item.get("skip_reason")
+        if skip_reason:
+            skipped += 1
+            details.append(
+                {
+                    "relpath": rel,
+                    "src": str(src),
+                    "action": "skip",
+                    "reason": skip_reason,
+                }
+            )
+            continue
+
         if only_ok_ffprobe:
             ff = item.get("ffprobe")
             if not isinstance(ff, dict) or ff.get("ok") is not True:
