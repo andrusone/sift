@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from typing import List, Optional
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from .config import load_toml, parse_config
 from .errors import CacheError, ConfigError
@@ -13,10 +14,29 @@ from .transfer import transfer_inventory
 from .utils import as_path
 
 
+def get_version() -> str:
+    """Return installed package version or a source fallback.
+
+    When running from an installed distribution, use importlib.metadata.
+    When running directly from source without an installed dist, return
+    a clear placeholder so users understand the context.
+    """
+    try:
+        return _pkg_version("sift")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="sift",
         description="Media intake: ffprobe incoming media, cache metrics, and optionally copy/move into outgoing_root.",
+    )
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"sift {get_version()}",
+        help="Print version and exit.",
     )
     p.add_argument(
         "--config",
