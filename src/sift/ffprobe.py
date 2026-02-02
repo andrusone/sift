@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .model import FFProbeConfig
 from .utils import parse_ratio, safe_float, safe_int
@@ -31,8 +31,17 @@ def run_ffprobe(
         return None, f"ffprobe output was not valid JSON: {e}"
 
 
-def summarize(ff: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract a compact subset of technical metrics (stable cache footprint)."""
+def summarize(
+    ff: Dict[str, Any], audio_codec_preference: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Extract a compact subset of technical metrics (stable cache footprint).
+
+    Args:
+        ff: Raw ffprobe JSON output
+        audio_codec_preference: Optional list of audio codecs in preference order.
+            When provided, audio stream selection prioritizes codecs earlier in the list,
+            falling back to channel count and bitrate for unlisted codecs or ties.
+    """
     out: Dict[str, Any] = {"ok": True}
 
     fmt = ff.get("format") or {}
@@ -65,12 +74,27 @@ def summarize(ff: Dict[str, Any]) -> Dict[str, Any]:
     abest = None
     if astreams:
 
-        def akey(s: Dict[str, Any]) -> tuple[int, int]:
+        def akey(s: Dict[str, Any]) -> tuple[int, int, int]:
+            codec = s.get("codec_name") or ""
             ch = safe_int(s.get("channels")) or 0
             br = safe_int(s.get("bit_rate")) or 0
-            return (ch, br)
 
-        abest = sorted(astreams, key=akey, reverse=True)[0]
+            # Codec preference: lower index = higher priority
+            # Unlisted codecs get a high penalty value
+            codec_priority = 9999
+            if audio_codec_preference:
+                try:
+                    codec_priority = audio_codec_preference.index(codec)
+                except (ValueError, AttributeError):
+                    # Codec not in preference list - deprioritize it
+                    codec_priority = 9999
+
+            # Return tuple for sorting: (codec_priority, -channels, -bitrate)
+            # We negate channels/bitrate because we want higher values to sort first
+            # but lower codec_priority to sort first
+            return (codec_priority, -ch, -br)
+
+        abest = sorted(astreams, key=akey)[0]
 
     if vbest:
         vf: Dict[str, Any] = {

@@ -144,7 +144,9 @@ def build_inventory(
             errors += 1
             item["ffprobe"] = {"ok": False, "error": err}
         else:
-            item["ffprobe"] = summarize(ffj)
+            item["ffprobe"] = summarize(
+                ffj, audio_codec_preference=cfg.classification.audio_codec_preference
+            )
 
         # Compute the proposed name (rendered using naming templates) if possible.
         try:
