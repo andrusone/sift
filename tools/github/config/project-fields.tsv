@@ -1,0 +1,8 @@
+# Custom fields. name<TAB>type<TAB>options (single_select only, comma separated)
+# type is single_select, number, text, or date. Score = Value / Estimate; Projects has no formula fields,
+# so the architect (or automation) sets it.
+Estimate	single_select	1,2,3,5,8
+Value	number	
+Score	number	
+Sprint	text	
+Waiting on	single_select	None,Architect,Owner,Agent

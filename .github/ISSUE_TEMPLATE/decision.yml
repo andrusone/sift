@@ -1,0 +1,28 @@
+name: Decision
+description: A question the spec does not already answer
+labels: ["type:decision"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the spec already answers the question, link the requirement on the card instead of opening a Decision.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options and consequences
+  - type: input
+    id: cards
+    attributes:
+      label: Cards waiting on this
+      placeholder: "#12, #14"
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision
+      description: Filled in by the architect (or the owner, for a functional question), with the spec change if there is one.

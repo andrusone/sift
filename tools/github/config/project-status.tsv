@@ -1,0 +1,8 @@
+# Status column options, in board order. name<TAB>COLOR<TAB>description
+# COLOR is one of GRAY BLUE GREEN YELLOW ORANGE RED PINK PURPLE
+Backlog	GRAY	Owner-captured need in functional terms
+Preparing	PURPLE	Architect adding acceptance, spec links, dependencies, estimate
+Ready	BLUE	No open question, has Value, dependencies met, 5 points or less
+In progress	YELLOW	An agent is working on it
+Blocked	RED	Stopped at a blocker; see Waiting on
+Done	GREEN	Merged and set Done by the architect

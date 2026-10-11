@@ -1,0 +1,41 @@
+name: Story
+description: A story in outcome form
+labels: ["type:story"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: The outcome for the user, in functional terms. The owner writes this.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: What can be seen when it works. Outcomes, not implementation. The architect refines this.
+    validations:
+      required: true
+  - type: textarea
+    id: assumptions
+    attributes:
+      label: Assumptions
+      description: What is taken as true. Agents add theirs as comments.
+  - type: textarea
+    id: spec
+    attributes:
+      label: Spec links
+      description: Requirement IDs. Added by the architect before the card is Ready.
+  - type: input
+    id: depends
+    attributes:
+      label: Depends on
+      description: Exact card numbers (for example "#12, #14") or "none".
+      placeholder: none
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Agent notes
+      description: Where to look, constraints, which commands prove the work. Not a design.

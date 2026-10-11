@@ -1,0 +1,11 @@
+# name<TAB>color<TAB>description
+type:story	1d76db	Story in outcome form (why, acceptance, assumptions, spec links, depends on)
+type:decision	5319e7	Decision issue: a question the spec does not already answer
+type:spec	0e8a16	Spec-only change (requirement, changelog row)
+type:bug	d73a4a	Defect found in review or UAT
+type:chore	cfd3d7	Housekeeping with no product change
+sprint-log	fbca04	The pinned sprint log issue
+blocked	b60205	Work stopped at a blocker; see the card
+waiting:architect	c5def5	Agent question awaiting the architect
+waiting:owner	f9d0c4	Awaiting the product owner (value, UAT, guardrail files)
+guardrail	e99695	Touches workflows, branch protection or skills: owner approval required

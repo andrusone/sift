@@ -18,3 +18,11 @@ config.toml
 # direnv
 .direnv/
 .envrc
+
+# Real library data and control-set files: never committed (docs/SAFETY.md, rule 5)
+var/
+
+# Generated discovery output
+agent-environment.json
+host.json
+host.md
