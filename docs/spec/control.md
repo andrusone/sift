@@ -6,7 +6,7 @@ Real control-set data lives outside git (`var/control/`, git-ignored). Only the 
 
 ### CTL-FR-1: Manifest format and validator
 
-The control manifest is a TOML file with one `[[control]]` table per title, with these keys: `id` (an inventory `id` from SRV-FR-2), `kind` (`fail` or `pass`), `client` (`plex-appletv`, `infuse-appletv`, `plex-web`, `other`), `symptom` (one of `none`, `no_audio`, `wrong_audio`, `audio_transcode`, `video_transcode`, `subtitle_burn_in`, `buffering`, `other`), `expected_audio_language`, and free-text `notes`. `sift control validate <file>` checks the file and lists every problem, naming the entry by its id.
+The control manifest is a TOML file with one `[[control]]` table per title, with these keys: `id` (an inventory `id` from SRV-FR-2), `kind` (`fail` or `pass`), `client` (`plex-appletv`, `plex-roku`, `infuse-appletv`, `plex-web`, `other`), `symptom` (one of `none`, `no_audio`, `wrong_audio`, `audio_transcode`, `video_transcode`, `subtitle_burn_in`, `buffering`, `other`), `expected_audio_language`, and free-text `notes`. `sift control validate <file>` checks the file and lists every problem, naming the entry by its id.
 
 **Acceptance:** a valid manifest passes; a manifest with an unknown symptom, a duplicate id, a `pass` entry with a symptom other than `none`, or an id not in the inventory is rejected with the entry named.
 **Tests:** `test_manifest_valid`, `test_manifest_rejects_unknown_symptom`, `test_manifest_rejects_duplicate_id`, `test_manifest_pass_must_have_symptom_none`, `test_manifest_id_must_exist_in_inventory`.

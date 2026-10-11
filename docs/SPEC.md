@@ -1,7 +1,7 @@
 # Specification
 
 **Product:** sift v2 (see `docs/spec/product.md`)
-**Spec version:** 0.1.0
+**Spec version:** 0.2.0
 
 The spec is the single source of truth for what the product does and how. Only the architect edits it. Agents may add traceability rows and dependency pins when a card says so.
 
@@ -20,6 +20,7 @@ Every change adds a row to the changelog in the same PR.
 | Version | Date | Change | Requirements | PR |
 |---|---|---|---|---|
 | 0.1.0 | 2026-10-11 | Initial spec: v2 product definition and phase 1 (gather data) requirements | PRB, SRV, PLX, CTL, FIX, GRD | |
+| 0.2.0 | 2026-10-11 | Control-set `client` gains `plex-roku`: the owner found Plex on Roku TV plays files that Plex on Apple TV does not, so every title is recorded per player | CTL-FR-1 | #34 |
 
 ## Requirements
 
