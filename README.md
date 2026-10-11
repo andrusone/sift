@@ -14,6 +14,8 @@ You decide what stays.
 
 > Not related to the DFIR “SIFT Workstation” or computer-vision SIFT algorithms.
 
+> **Version 2 is in progress.** The goal is changing from "is this worth keeping?" to "will this play on Plex and Apple TV, and what exactly is in it?". This README describes version 1, which still works. The plan is in [docs/spec/product.md](docs/spec/product.md); the work is tracked on the project board. See [Developing sift](#developing-sift).
+
 ---
 
 ## The problem
@@ -100,9 +102,9 @@ That’s it.
 
 ### Requirements
 
-- Linux
+- Linux (the VM where Plex lives; development on other systems is fine)
 - `ffprobe` (from FFmpeg)
-- Python **3.11+**
+- Python **3.12+**
 
 ---
 
@@ -255,3 +257,23 @@ jq '.details[] | [.tier_id, .relpath] | @tsv' /tmp/sift-transfer.json
 
 `sift` never deletes your media.
 It only helps you decide what’s worth keeping.
+
+---
+
+## Developing sift
+
+sift is built with the [OneFoundry](https://github.com/andrusone/onefoundry) operating model: a product owner decides what and why, an architect writes the spec and reviews, and coding agents build one small story at a time.
+
+- Product intent and phases: [docs/spec/product.md](docs/spec/product.md)
+- Requirements: [docs/SPEC.md](docs/SPEC.md) and [docs/spec/](docs/spec/)
+- How the work flows: [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md)
+- What must never happen: [docs/SAFETY.md](docs/SAFETY.md)
+
+Build and test:
+
+```bash
+python -m pip install -e . pytest "black>=25.12,<26" "ruff>=0.14.10,<0.15"
+python -m pytest
+python -m ruff check .
+python -m black --check .
+```
